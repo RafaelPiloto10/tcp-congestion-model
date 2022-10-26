@@ -4,9 +4,10 @@ import (
 	"log"
 	"net"
 	"sync"
-)
+	"time"
 
-const MAGIC = (512 * (512 + 1)) / 2
+	"github.com/RafaelPiloto10/tcp-congestion-model/message"
+)
 
 type Metrics struct {
 	sync.Mutex
@@ -39,6 +40,13 @@ func (m *Metrics) AddDroppedPacket(count uint64) {
 	m.droppedPackets += count
 }
 
+func (m *Metrics) AddPacket(count uint64) {
+	m.Lock()
+	defer m.Unlock()
+
+	m.totalPackets += count
+}
+
 func main() {
 	metrics := NewMetrics()
 	ln, err := net.Listen("tcp", "127.0.0.1:8000")
@@ -63,30 +71,37 @@ func main() {
 }
 
 func handleConn(conn net.Conn, metrics *Metrics) {
-	buffer := make([]byte, 512)
+	// Force packets to arrive before 3 seconds
+	conn.SetReadDeadline(time.Now().Add(time.Second * 3))
+	m := message.NewEmptyMessage()
 	length := 0
 
 	for {
+		buffer := make([]byte, 256)
 		n, err := conn.Read(buffer)
+
+		for i := 0; i < n; i++ {
+			m.Data[length + i] = buffer[i]
+		}
+
 		length += n
+
+		metrics.AddPacket(1)
 
 		if err != nil {
 			log.Printf("failed to read from buffer; %v\n", err)
 			metrics.AddError(1)
 			break
-		}
-
-		if length >= 512 {
-			// TODO: Verify maybe through packet headers that we received a total of 100 packets each sized 512 bytes
-			//		with increasing packet ID's and they each contain valid information
-
-			// TODO: May need to increase packet size to force congestion
+		} else if length >= message.BufferLength {
 			break
+		} else if n != 0 {
+			log.Printf("received packet of size %d; total buffer length = %d; buffer = %v\n", n, length, buffer)
 		}
 	}
 
-	if length != 512 {
+	if !m.Checksum() {
 		metrics.AddDroppedPacket(1)
+		log.Printf("invalid checksum; encountered lost packets; got checksum of %v; expected %v\n", m.GetChecksum(), message.BufferLength*(message.BufferLength+1)/2)
 	}
 
 	if err := conn.Close(); err != nil {

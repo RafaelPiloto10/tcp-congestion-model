@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"log"
 	"net"
+
+	"github.com/RafaelPiloto10/tcp-congestion-model/message"
 )
 
 func main() {
@@ -15,16 +16,15 @@ func main() {
 
 	defer conn.Close()
 
-	// TODO: Send the server 100 packets, with increasing packet ID
-	//		 Consider varying packet size to force congestion?
-	buffer := bytes.NewBufferString("Hello world!\n")
-	ret, err := conn.Write(buffer.Bytes())
-
+	buffer := message.NewMessage()
+	ret, err := conn.Write(buffer.Data[:])
 	if err != nil {
-		log.Printf("failed to write buffer %b; %v\n", buffer.Bytes(), err)
+		log.Printf("failed to write buffer %b; %v\n", buffer.Data, err)
 	}
 
-	if ret < buffer.Len() {
-		log.Printf("failed to write complete buffer; got %d; wanted %d\n", ret, buffer.Len())
+	if ret < len(buffer.Data) {
+		log.Printf("failed to write complete buffer; got %d; wanted %d\n", ret, len(buffer.Data))
+	} else {
+		log.Printf("wrote buffer of size = %d\n", ret)
 	}
 }
