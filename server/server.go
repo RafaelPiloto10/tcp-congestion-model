@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -75,13 +76,14 @@ func handleConn(conn net.Conn, metrics *Metrics) {
 	conn.SetReadDeadline(time.Now().Add(time.Second * 3))
 	m := message.NewEmptyMessage()
 	length := 0
+	isAlive := true
 
-	for {
+	for isAlive {
 		buffer := make([]byte, 256)
 		n, err := conn.Read(buffer)
 
 		for i := 0; i < n; i++ {
-			m.Data[length + i] = buffer[i]
+			m.Data[length+i] = buffer[i]
 		}
 
 		length += n
@@ -89,23 +91,29 @@ func handleConn(conn net.Conn, metrics *Metrics) {
 		metrics.AddPacket(1)
 
 		if err != nil {
+			if err == io.EOF {
+				isAlive = false
+				return
+			}
+
 			log.Printf("failed to read from buffer; %v\n", err)
 			metrics.AddError(1)
-			break
 		} else if length >= message.BufferLength {
-			break
+			if !m.Checksum() {
+				metrics.AddDroppedPacket(1)
+				log.Printf("invalid checksum; encountered lost packets; got checksum of %v; expected %v\n", m.GetChecksum(), message.BufferLength*(message.BufferLength+1)/2)
+				isAlive = false
+				if err = conn.Close(); err != nil {
+					log.Printf("got err trying to close conn; %v\n", err)
+					metrics.AddError(1)
+				}
+			} else {
+				log.Printf("%s - size of %d; checksum validated", conn.LocalAddr().String(), message.BufferLength)
+				m = message.NewEmptyMessage()
+				length = 0
+			}
 		} else if n != 0 {
 			log.Printf("received packet of size %d; total buffer length = %d; buffer = %v\n", n, length, buffer)
 		}
-	}
-
-	if !m.Checksum() {
-		metrics.AddDroppedPacket(1)
-		log.Printf("invalid checksum; encountered lost packets; got checksum of %v; expected %v\n", m.GetChecksum(), message.BufferLength*(message.BufferLength+1)/2)
-	}
-
-	if err := conn.Close(); err != nil {
-		log.Printf("failed to close connection to %s; %v", conn.RemoteAddr(), err)
-		metrics.AddError(1)
 	}
 }
