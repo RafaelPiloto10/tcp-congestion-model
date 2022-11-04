@@ -16,15 +16,17 @@ func main() {
 
 	defer conn.Close()
 
-	buffer := message.NewMessage()
-	ret, err := conn.Write(buffer.Data[:])
-	if err != nil {
-		log.Printf("failed to write buffer %b; %v\n", buffer.Data, err)
-	}
+	for i := 0; i < 10; i++ {
+		buffer := message.NewMessage()
+		ret, err := conn.Write(buffer.Data[:])
+		if err != nil {
+			log.Printf("failed to write buffer %b; %v\n", buffer.Data, err)
+		}
 
-	if ret < len(buffer.Data) {
-		log.Printf("failed to write complete buffer; got %d; wanted %d\n", ret, len(buffer.Data))
-	} else {
-		log.Printf("wrote buffer of size = %d\n", ret)
+		if ret < len(buffer.Data) {
+			log.Printf("failed to write complete buffer; got %d; wanted %d\n", ret, len(buffer.Data))
+		} else {
+			log.Printf("wrote buffer of size = %d\n", ret)
+		}
 	}
 }
