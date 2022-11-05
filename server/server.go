@@ -48,6 +48,22 @@ func (m *Metrics) AddPacket(count uint64) {
 	m.totalPackets += count
 }
 
+func (m *Metrics) AddConn(count uint64) {
+	m.Lock()
+	defer m.Unlock()
+
+	m.totalConn += count
+}
+
+func (m *Metrics) ReportMetrics() {
+	m.Lock()
+	defer m.Unlock()
+
+	log.Println()
+	log.Printf("Current metrics\n\t\tTotal Errors: %d\n\t\tTotal Connections: %d\n\t\tDropped Connections: %d\n\t\tTotal Packets: %d\n\t\tDropped Packets: %d\n",
+		m.totalErrors, m.totalConn, m.droppedConn, m.totalPackets, m.droppedPackets)
+}
+
 func main() {
 	metrics := NewMetrics()
 	ln, err := net.Listen("tcp", "127.0.0.1:8000")
@@ -57,6 +73,17 @@ func main() {
 
 	defer ln.Close()
 	log.Printf("tcp server running on 127.0.0.1:8000\n")
+
+	go func() {
+		lastUpdate := time.Now()
+
+		for {
+			if time.Now().Sub(lastUpdate) > time.Duration(30*time.Second) {
+				metrics.ReportMetrics()
+				lastUpdate = time.Now()
+			}
+		}
+	}()
 
 	for {
 
@@ -77,6 +104,7 @@ func handleConn(conn net.Conn, metrics *Metrics) {
 	m := message.NewEmptyMessage()
 	length := 0
 	isAlive := true
+	metrics.AddConn(1)
 
 	for isAlive {
 		buffer := make([]byte, 256)
@@ -108,7 +136,7 @@ func handleConn(conn net.Conn, metrics *Metrics) {
 					metrics.AddError(1)
 				}
 			} else {
-				log.Printf("%s - size of %d; checksum validated", conn.LocalAddr().String(), message.BufferLength)
+				// log.Printf("%s - size of %d; checksum validated", conn.LocalAddr().String(), message.BufferLength)
 				m = message.NewEmptyMessage()
 				length = 0
 			}
